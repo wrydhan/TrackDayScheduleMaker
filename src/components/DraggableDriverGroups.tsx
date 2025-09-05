@@ -9,7 +9,6 @@ import {
   useSensor,
   useSensors,
   DragEndEvent,
-  DragOverEvent,
   DragStartEvent,
   DragOverlay,
   useDroppable,

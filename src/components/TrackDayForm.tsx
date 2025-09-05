@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Driver, TrackDayConfig } from '@/types';
+import { Driver, TrackDayConfig, Schedule } from '@/types';
 import { generateSchedule, assignDriversToGroups } from '@/lib/scheduleGenerator';
 import { generatePDF } from '@/lib/pdfGenerator';
 import { Plus, Trash2, Download } from 'lucide-react';
@@ -31,7 +31,7 @@ const formSchema = z.object({
 type FormData = z.infer<typeof formSchema>;
 
 export default function TrackDayForm() {
-  const [schedule, setSchedule] = useState<any>(null);
+  const [schedule, setSchedule] = useState<Schedule | null>(null);
   const [driverGroups, setDriverGroups] = useState<Record<string, Driver[]>>({});
   const [hasGeneratedSchedule, setHasGeneratedSchedule] = useState(false);
 
@@ -360,7 +360,7 @@ export default function TrackDayForm() {
                 </tr>
               </thead>
               <tbody>
-                {schedule.sessions.map((session: any) => (
+                {schedule.sessions.map((session) => (
                   <tr key={session.id}>
                     <td className="border border-gray-300 px-4 py-2 font-medium text-gray-900">{session.startTime}</td>
                     <td className="border border-gray-300 px-4 py-2 font-medium text-gray-900">{session.endTime}</td>

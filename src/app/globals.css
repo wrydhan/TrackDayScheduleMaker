@@ -23,4 +23,89 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  font-weight: 500 !important;
+}
+
+/* Force darker text throughout the application */
+* {
+  font-weight: 500 !important;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 700 !important;
+  color: #111827 !important;
+}
+
+label {
+  font-weight: 600 !important;
+  color: #374151 !important;
+}
+
+button {
+  font-weight: 600 !important;
+}
+
+input, select, textarea {
+  font-weight: 500 !important;
+  color: #111827 !important;
+}
+
+table {
+  font-weight: 500 !important;
+}
+
+th {
+  font-weight: 700 !important;
+  color: #111827 !important;
+}
+
+td {
+  font-weight: 500 !important;
+  color: #111827 !important;
+}
+
+p {
+  font-weight: 500 !important;
+  color: #374151 !important;
+}
+
+/* Custom slider styles */
+.slider {
+  -webkit-appearance: none;
+  appearance: none;
+  background: #e5e7eb;
+  outline: none;
+  border-radius: 8px;
+}
+
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  background: #3b82f6;
+  cursor: pointer;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.slider::-webkit-slider-thumb:hover {
+  background: #2563eb;
+  transform: scale(1.1);
+}
+
+.slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  background: #3b82f6;
+  cursor: pointer;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.slider::-moz-range-thumb:hover {
+  background: #2563eb;
+  transform: scale(1.1);
 }

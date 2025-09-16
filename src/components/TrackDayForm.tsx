@@ -105,7 +105,7 @@ export default function TrackDayForm() {
 
       return () => clearTimeout(timer);
     }
-  }, [hasGeneratedSchedule, validDrivers, config.groupingMethod, config.numberOfRunGroups]);
+  }, [hasGeneratedSchedule, validDrivers, config]);
 
   const onSubmit = useCallback((data: FormData) => {
     const submissionConfig: TrackDayConfig = {
@@ -179,7 +179,7 @@ export default function TrackDayForm() {
           Track Day Schedule Maker
         </h1>
         <p className="text-xl text-gray-300 font-medium">
-          Create Racing Schedules
+          Create Professional Racing Schedules
         </p>
       </div>
       

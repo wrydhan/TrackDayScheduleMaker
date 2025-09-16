@@ -9,7 +9,7 @@ import {
   useSensor,
   useSensors,
   DragEndEvent,
-  DragStartEvent,
+  DragOverEvent,
   useDroppable,
 } from '@dnd-kit/core';
 import {
@@ -21,7 +21,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Driver } from '@/types';
-import { GripVertical, Users, Plus, Star, Zap, Trophy } from 'lucide-react';
+import { GripVertical, Users, Plus } from 'lucide-react';
 
 interface DraggableDriverGroupsProps {
   driverGroups: Record<string, Driver[]>;
@@ -89,10 +89,11 @@ function DraggableDriver({ driver, groupName }: { driver: Driver; groupName: str
   );
 }
 
-function DroppableGroup({ groupName, children, isOver }: { 
+function DroppableGroup({ groupName, children, isOver, driverCount }: { 
   groupName: string; 
   children: React.ReactNode; 
-  isOver: boolean; 
+  isOver: boolean;
+  driverCount: number;
 }) {
   const { setNodeRef } = useDroppable({
     id: groupName,
@@ -121,9 +122,7 @@ function DroppableGroup({ groupName, children, isOver }: {
           {groupName}
         </h3>
         <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white text-sm font-bold px-4 py-2 rounded-full shadow-lg">
-          {children && typeof children === 'object' && 'props' in children && 
-           children.props && 'children' && Array.isArray(children.props.children) ? 
-           children.props.children.filter((child: any) => child?.type?.name === 'DraggableDriver').length : 0} drivers
+          {driverCount} drivers
         </div>
       </div>
       {children}
@@ -132,7 +131,6 @@ function DroppableGroup({ groupName, children, isOver }: {
 }
 
 export default function DraggableDriverGroups({ driverGroups, onGroupsChange }: DraggableDriverGroupsProps) {
-  const [activeDriver, setActiveDriver] = useState<Driver | null>(null);
   const [overGroup, setOverGroup] = useState<string | null>(null);
 
   const sensors = useSensors(
@@ -161,19 +159,9 @@ export default function DraggableDriverGroups({ driverGroups, onGroupsChange }: 
     return items;
   }, [localGroups, groupNames]);
 
-  const handleDragStart = useCallback((event: DragStartEvent) => {
-    const { active } = event;
-    const activeData = active.data.current as DriverData;
-    
-    if (activeData?.type === 'driver') {
-      setActiveDriver(activeData.driver);
-    }
-  }, []);
-
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
     
-    setActiveDriver(null);
     setOverGroup(null);
 
     if (!over) return;
@@ -236,13 +224,13 @@ export default function DraggableDriverGroups({ driverGroups, onGroupsChange }: 
     onGroupsChange(newGroups);
   }, [localGroups, onGroupsChange]);
 
-  const handleDragOver = useCallback((event: any) => {
+  const handleDragOver = useCallback((event: DragOverEvent) => {
     const { over } = event;
     if (over) {
       const overData = over.data.current;
-      if (overData?.type === 'group') {
+      if (overData?.type === 'group' && overData.groupName) {
         setOverGroup(overData.groupName);
-      } else if (overData?.type === 'driver') {
+      } else if (overData?.type === 'driver' && overData.fromGroup) {
         setOverGroup(overData.fromGroup);
       }
     } else {
@@ -269,13 +257,17 @@ export default function DraggableDriverGroups({ driverGroups, onGroupsChange }: 
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
-        onDragStart={handleDragStart}
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 w-full">
           {groupNames.map((groupName) => (
-            <DroppableGroup key={groupName} groupName={groupName} isOver={overGroup === groupName}>
+            <DroppableGroup 
+              key={groupName} 
+              groupName={groupName} 
+              isOver={overGroup === groupName}
+              driverCount={localGroups[groupName]?.length || 0}
+            >
               <SortableContext items={itemsPerGroup[groupName] || []} strategy={verticalListSortingStrategy}>
                 <div className="space-y-3 min-h-[150px] max-h-[400px] overflow-y-auto overflow-x-hidden">
                   {localGroups[groupName]?.map((driver) => (

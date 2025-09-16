@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Driver, TrackDayConfig, Schedule } from '@/types';
 import { generateSchedule, assignDriversToGroups } from '@/lib/scheduleGenerator';
 import { generatePDF } from '@/lib/pdfGenerator';
-import { Plus, Trash2, Download } from 'lucide-react';
+import { Plus, Trash2, Download, Zap, Users, Clock, Settings } from 'lucide-react';
 import DraggableDriverGroups from './DraggableDriverGroups';
 
 const driverSchema = z.object({
@@ -39,14 +39,14 @@ export default function TrackDayForm() {
     resolver: zodResolver(formSchema),
     defaultValues: {
       startTime: '08:00',
-      totalTime: 480, // 8 hours
+      totalTime: 480,
       sessionDuration: 20,
       numberOfRunGroups: 3,
       groupingMethod: 'skill',
       lunchBreakDuration: 60,
       techInspectionDuration: 30,
       driverMeetingDuration: 15,
-      breakDuration: 15, // 15 minutes between sessions
+      breakDuration: 15,
       drivers: [{ name: '', skillLevel: 'beginner' }]
     }
   });
@@ -56,43 +56,59 @@ export default function TrackDayForm() {
     name: 'drivers'
   });
 
-  const breakDuration = watch('breakDuration');
-  const startTime = watch('startTime');
-  const drivers = watch('drivers');
-  const groupingMethod = watch('groupingMethod');
-  const numberOfRunGroups = watch('numberOfRunGroups');
+  const watchedValues = watch();
 
-  // Auto-update groups when drivers, grouping method, or number of groups changes
-  useEffect(() => {
-    if (hasGeneratedSchedule && drivers.length > 0) {
-      const config: TrackDayConfig = {
-        startTime: startTime,
-        totalTime: 480, // Use default for auto-update
-        sessionDuration: 20,
-        numberOfRunGroups: numberOfRunGroups,
-        groupingMethod: groupingMethod,
-        lunchBreakDuration: 60,
-        techInspectionDuration: 30,
-        driverMeetingDuration: 15,
-        breakDuration: breakDuration
-      };
-
-      const driverObjects: Driver[] = drivers.map((driver, index) => ({
+  // Memoize computed values to prevent infinite loops
+  const validDrivers = useMemo(() => {
+    return watchedValues.drivers
+      .filter(driver => driver.name.trim() !== '')
+      .map((driver, index) => ({
         id: `driver-${index}`,
         name: driver.name,
         skillLevel: driver.skillLevel
       }));
+  }, [watchedValues.drivers]);
 
-      // Update groups for both skill and random grouping if we have valid drivers
-      if (driverObjects.every(d => d.name.trim() !== '')) {
-        const groups = assignDriversToGroups(driverObjects, config);
-        setDriverGroups(groups);
-      }
+  const config = useMemo(() => ({
+    startTime: watchedValues.startTime,
+    totalTime: watchedValues.totalTime,
+    sessionDuration: watchedValues.sessionDuration,
+    numberOfRunGroups: watchedValues.numberOfRunGroups,
+    groupingMethod: watchedValues.groupingMethod,
+    lunchBreakDuration: watchedValues.lunchBreakDuration,
+    techInspectionDuration: watchedValues.techInspectionDuration,
+    driverMeetingDuration: watchedValues.driverMeetingDuration,
+    breakDuration: watchedValues.breakDuration
+  }), [
+    watchedValues.startTime,
+    watchedValues.totalTime,
+    watchedValues.sessionDuration,
+    watchedValues.numberOfRunGroups,
+    watchedValues.groupingMethod,
+    watchedValues.lunchBreakDuration,
+    watchedValues.techInspectionDuration,
+    watchedValues.driverMeetingDuration,
+    watchedValues.breakDuration
+  ]);
+
+  // Optimized useEffect with debounced updates
+  useEffect(() => {
+    if (hasGeneratedSchedule && validDrivers.length > 0) {
+      const timer = setTimeout(() => {
+        try {
+          const groups = assignDriversToGroups(validDrivers, config);
+          setDriverGroups(groups);
+        } catch (error) {
+          console.error('Error assigning drivers to groups:', error);
+        }
+      }, 100);
+
+      return () => clearTimeout(timer);
     }
-  }, [drivers, groupingMethod, numberOfRunGroups, hasGeneratedSchedule, startTime, breakDuration]);
+  }, [hasGeneratedSchedule, validDrivers, config.groupingMethod, config.numberOfRunGroups]);
 
-  const onSubmit = (data: FormData) => {
-    const config: TrackDayConfig = {
+  const onSubmit = useCallback((data: FormData) => {
+    const submissionConfig: TrackDayConfig = {
       startTime: data.startTime,
       totalTime: data.totalTime,
       sessionDuration: data.sessionDuration,
@@ -104,37 +120,46 @@ export default function TrackDayForm() {
       breakDuration: data.breakDuration
     };
 
-    const drivers: Driver[] = data.drivers.map((driver, index) => ({
-      id: `driver-${index}`,
-      name: driver.name,
-      skillLevel: driver.skillLevel
-    }));
+    const drivers: Driver[] = data.drivers
+      .filter(driver => driver.name.trim() !== '')
+      .map((driver, index) => ({
+        id: `driver-${index}`,
+        name: driver.name,
+        skillLevel: driver.skillLevel
+      }));
 
-    const generatedSchedule = generateSchedule(drivers, config);
-    const groups = assignDriversToGroups(drivers, config);
+    try {
+      const generatedSchedule = generateSchedule(drivers, submissionConfig);
+      const groups = assignDriversToGroups(drivers, submissionConfig);
 
-    setSchedule(generatedSchedule);
-    setDriverGroups(groups);
-    setHasGeneratedSchedule(true);
-  };
-
-  const handleDownloadPDF = () => {
-    if (schedule) {
-      generatePDF(schedule, driverGroups);
+      setSchedule(generatedSchedule);
+      setDriverGroups(groups);
+      setHasGeneratedSchedule(true);
+    } catch (error) {
+      console.error('Error generating schedule:', error);
     }
-  };
+  }, []);
 
-  const handleGroupsChange = (newGroups: Record<string, Driver[]>) => {
+  const handleDownloadPDF = useCallback(() => {
+    if (schedule) {
+      try {
+        generatePDF(schedule, driverGroups);
+      } catch (error) {
+        console.error('Error generating PDF:', error);
+      }
+    }
+  }, [schedule, driverGroups]);
+
+  const handleGroupsChange = useCallback((newGroups: Record<string, Driver[]>) => {
     setDriverGroups(newGroups);
-  };
+  }, []);
 
-  // Generate time options for the dropdown
-  const generateTimeOptions = () => {
-    const options = [];
+  const timeOptions = useMemo(() => {
+    const options: React.ReactNode[] = [];
     for (let hour = 6; hour <= 12; hour++) {
       for (let minute = 0; minute < 60; minute += 15) {
         const timeString = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-        const displayTime = hour === 12 ? `12:${minute.toString().padStart(2, '0')} PM` : 
+        const displayTime = hour === 12 ? `12:${minute.toString().padStart(2, '0')} PM` :
                            hour > 12 ? `${hour - 12}:${minute.toString().padStart(2, '0')} PM` :
                            `${hour}:${minute.toString().padStart(2, '0')} AM`;
         options.push(
@@ -145,67 +170,91 @@ export default function TrackDayForm() {
       }
     }
     return options;
-  };
+  }, []);
 
   return (
     <div className="max-w-6xl mx-auto p-6">
-      <h1 className="text-3xl font-bold text-center mb-8 text-gray-900">Track Day Schedule Maker</h1>
+      <div className="text-center mb-12 floating">
+        <h1 className="text-5xl font-bold mb-4 tracking-wide">
+          Track Day Schedule Maker
+        </h1>
+        <p className="text-xl text-gray-300 font-medium">
+          Create Racing Schedules
+        </p>
+      </div>
       
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-        {/* Configuration Section */}
-        <div className="bg-white p-6 rounded-lg shadow-md">
-          <h2 className="text-xl font-bold mb-4 text-gray-900">Track Day Configuration</h2>
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
+        <div className="card p-8">
+          <div className="flex items-center gap-3 mb-6">
+            <Settings className="text-2xl text-blue-400" />
+            <h2 className="text-2xl font-bold">Track Day Configuration</h2>
+          </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-sm font-semibold mb-2 text-gray-800">Start Time</label>
+              <label className="block text-sm font-semibold mb-3 text-gray-300 flex items-center gap-2">
+                <Clock size={16} />
+                Start Time
+              </label>
               <select
                 {...register('startTime')}
-                className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent font-medium text-gray-900"
+                className="w-full p-4 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent font-medium"
               >
-                {generateTimeOptions()}
+                {timeOptions}
               </select>
-              {errors.startTime && <p className="text-red-500 text-sm mt-1 font-medium">{errors.startTime.message}</p>}
+              {errors.startTime && <p className="text-red-400 text-sm mt-2 font-medium">{errors.startTime.message}</p>}
             </div>
 
             <div>
-              <label className="block text-sm font-semibold mb-2 text-gray-800">Total Track Time (minutes)</label>
+              <label className="block text-sm font-semibold mb-3 text-gray-300 flex items-center gap-2">
+                <Clock size={16} />
+                Total Track Time (minutes)
+              </label>
               <input
                 type="number"
                 {...register('totalTime', { valueAsNumber: true })}
-                className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent font-medium text-gray-900"
+                className="w-full p-4 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent font-medium"
                 placeholder="480"
               />
-              {errors.totalTime && <p className="text-red-500 text-sm mt-1 font-medium">{errors.totalTime.message}</p>}
+              {errors.totalTime && <p className="text-red-400 text-sm mt-2 font-medium">{errors.totalTime.message}</p>}
             </div>
 
             <div>
-              <label className="block text-sm font-semibold mb-2 text-gray-800">Session Duration (minutes)</label>
+              <label className="block text-sm font-semibold mb-3 text-gray-300 flex items-center gap-2">
+                <Zap size={16} />
+                Session Duration (minutes)
+              </label>
               <input
                 type="number"
                 {...register('sessionDuration', { valueAsNumber: true })}
-                className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent font-medium text-gray-900"
+                className="w-full p-4 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent font-medium"
                 placeholder="20"
               />
-              {errors.sessionDuration && <p className="text-red-500 text-sm mt-1 font-medium">{errors.sessionDuration.message}</p>}
+              {errors.sessionDuration && <p className="text-red-400 text-sm mt-2 font-medium">{errors.sessionDuration.message}</p>}
             </div>
 
             <div>
-              <label className="block text-sm font-semibold mb-2 text-gray-800">Number of Run Groups</label>
+              <label className="block text-sm font-semibold mb-3 text-gray-300 flex items-center gap-2">
+                <Users size={16} />
+                Number of Run Groups
+              </label>
               <input
                 type="number"
                 {...register('numberOfRunGroups', { valueAsNumber: true })}
-                className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent font-medium text-gray-900"
+                className="w-full p-4 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent font-medium"
                 placeholder="3"
               />
-              {errors.numberOfRunGroups && <p className="text-red-500 text-sm mt-1 font-medium">{errors.numberOfRunGroups.message}</p>}
+              {errors.numberOfRunGroups && <p className="text-red-400 text-sm mt-2 font-medium">{errors.numberOfRunGroups.message}</p>}
             </div>
 
             <div>
-              <label className="block text-sm font-semibold mb-2 text-gray-800">Grouping Method</label>
+              <label className="block text-sm font-semibold mb-3 text-gray-300 flex items-center gap-2">
+                <Users size={16} />
+                Grouping Method
+              </label>
               <select
                 {...register('groupingMethod')}
-                className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent font-medium text-gray-900"
+                className="w-full p-4 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent font-medium"
               >
                 <option value="skill">By Skill Level</option>
                 <option value="random">Random Groups</option>
@@ -213,85 +262,97 @@ export default function TrackDayForm() {
             </div>
 
             <div>
-              <label className="block text-sm font-semibold mb-2 text-gray-800">Lunch Break Duration (minutes)</label>
+              <label className="block text-sm font-semibold mb-3 text-gray-300 flex items-center gap-2">
+                <Clock size={16} />
+                Lunch Break Duration (minutes)
+              </label>
               <input
                 type="number"
                 {...register('lunchBreakDuration', { valueAsNumber: true })}
-                className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent font-medium text-gray-900"
+                className="w-full p-4 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent font-medium"
                 placeholder="60"
               />
-              {errors.lunchBreakDuration && <p className="text-red-500 text-sm mt-1 font-medium">{errors.lunchBreakDuration.message}</p>}
+              {errors.lunchBreakDuration && <p className="text-red-400 text-sm mt-2 font-medium">{errors.lunchBreakDuration.message}</p>}
             </div>
 
             <div>
-              <label className="block text-sm font-semibold mb-2 text-gray-800">Tech Inspection Duration (minutes)</label>
+              <label className="block text-sm font-semibold mb-3 text-gray-300 flex items-center gap-2">
+                <Settings size={16} />
+                Tech Inspection Duration (minutes)
+              </label>
               <input
                 type="number"
                 {...register('techInspectionDuration', { valueAsNumber: true })}
-                className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent font-medium text-gray-900"
+                className="w-full p-4 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent font-medium"
                 placeholder="30"
               />
-              {errors.techInspectionDuration && <p className="text-red-500 text-sm mt-1 font-medium">{errors.techInspectionDuration.message}</p>}
+              {errors.techInspectionDuration && <p className="text-red-400 text-sm mt-2 font-medium">{errors.techInspectionDuration.message}</p>}
             </div>
 
             <div>
-              <label className="block text-sm font-semibold mb-2 text-gray-800">Driver Meeting Duration (minutes)</label>
+              <label className="block text-sm font-semibold mb-3 text-gray-300 flex items-center gap-2">
+                <Users size={16} />
+                Driver Meeting Duration (minutes)
+              </label>
               <input
                 type="number"
                 {...register('driverMeetingDuration', { valueAsNumber: true })}
-                className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent font-medium text-gray-900"
+                className="w-full p-4 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent font-medium"
                 placeholder="15"
               />
-              {errors.driverMeetingDuration && <p className="text-red-500 text-sm mt-1 font-medium">{errors.driverMeetingDuration.message}</p>}
+              {errors.driverMeetingDuration && <p className="text-red-400 text-sm mt-2 font-medium">{errors.driverMeetingDuration.message}</p>}
             </div>
 
-            <div>
-              <label className="block text-sm font-semibold mb-2 text-gray-800">
-                Break Between Sessions: {breakDuration} minutes
+            <div className="md:col-span-2">
+              <label className="block text-sm font-semibold mb-3 text-gray-300 flex items-center gap-2">
+                <Zap size={16} />
+                Break Between Sessions: <span className="text-blue-400 font-bold text-lg">{watchedValues.breakDuration}</span> minutes
               </label>
-              <div className="mt-2">
+              <div className="mt-4">
                 <input
                   type="range"
                   {...register('breakDuration', { valueAsNumber: true })}
                   min="0"
                   max="60"
                   step="5"
-                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+                  className="w-full h-3 rounded-lg appearance-none cursor-pointer slider"
                 />
-                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <div className="flex justify-between text-sm text-gray-400 mt-3 font-medium">
                   <span>0 min</span>
                   <span>30 min</span>
                   <span>60 min</span>
                 </div>
               </div>
-              {errors.breakDuration && <p className="text-red-500 text-sm mt-1 font-medium">{errors.breakDuration.message}</p>}
+              {errors.breakDuration && <p className="text-red-400 text-sm mt-2 font-medium">{errors.breakDuration.message}</p>}
             </div>
           </div>
         </div>
 
-        {/* Drivers Section */}
-        <div className="bg-white p-6 rounded-lg shadow-md">
-          <h2 className="text-xl font-bold mb-4 text-gray-900">Drivers</h2>
+        <div className="card p-8">
+          <div className="flex items-center gap-3 mb-6">
+            <Users className="text-2xl text-purple-400" />
+            <h2 className="text-2xl font-bold">Drivers</h2>
+          </div>
           
           {fields.map((field, index) => (
-            <div key={field.id} className="flex gap-4 mb-4 p-4 border border-gray-200 rounded-md">
+            <div key={field.id} className="flex gap-4 mb-6 p-6 border border-muted rounded-xl card-muted">
               <div className="flex-1">
-                <label className="block text-sm font-semibold mb-2 text-gray-800">Driver Name</label>
+                <label className="block text-sm font-semibold mb-3 text-gray-300">Driver Name</label>
                 <input
                   {...register(`drivers.${index}.name`)}
-                  className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent font-medium text-gray-900"
+                  className="w-full p-4 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent font-medium"
                   placeholder="Enter driver name"
                 />
                 {errors.drivers?.[index]?.name && (
-                  <p className="text-red-500 text-sm mt-1 font-medium">{errors.drivers[index]?.name?.message}</p>
+                  <p className="text-red-400 text-sm mt-2 font-medium">{errors.drivers[index]?.name?.message}</p>
                 )}
               </div>
               
               <div className="flex-1">
-                <label className="block text-sm font-semibold mb-2 text-gray-800">Skill Level</label>
+                <label className="block text-sm font-semibold mb-3 text-gray-300">Skill Level</label>
                 <select
                   {...register(`drivers.${index}.skillLevel`)}
-                  className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent font-medium text-gray-900"
+                  className="w-full p-4 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent font-medium"
                 >
                   <option value="beginner">Beginner</option>
                   <option value="intermediate">Intermediate</option>
@@ -303,7 +364,7 @@ export default function TrackDayForm() {
                 <button
                   type="button"
                   onClick={() => remove(index)}
-                  className="p-3 text-red-500 hover:bg-red-50 rounded-md font-medium"
+                  className="btn-danger p-4"
                   disabled={fields.length === 1}
                 >
                   <Trash2 size={20} />
@@ -315,34 +376,35 @@ export default function TrackDayForm() {
           <button
             type="button"
             onClick={() => append({ name: '', skillLevel: 'beginner' })}
-            className="flex items-center gap-2 px-4 py-2 text-blue-600 hover:bg-blue-50 rounded-md font-semibold"
+            className="flex items-center gap-3 px-6 py-4 text-blue-400 hover:bg-blue-900/20 rounded-xl font-semibold border-2 border-dashed border-blue-400 hover:border-blue-300 transition-all duration-300"
           >
-            <Plus size={20} />
+            <Plus size={24} />
             Add Driver
           </button>
-          
-          {errors.drivers && <p className="text-red-500 text-sm mt-2 font-medium">{errors.drivers.message}</p>}
+          {errors.drivers && <p className="text-red-400 text-sm mt-3 font-medium">{errors.drivers.message}</p>}
         </div>
 
-        {/* Submit Button */}
-        <div className="flex justify-center">
-          <button
-            type="submit"
-            className="bg-blue-600 text-white px-8 py-3 rounded-md hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 font-semibold"
+        <div className="flex justify-center mt-8">
+          <button 
+            type="submit" 
+            className="btn-primary px-8 py-4 text-lg font-bold flex items-center gap-3 pulsing"
           >
+            <Zap size={24} />
             Generate Schedule
           </button>
         </div>
       </form>
 
-      {/* Schedule Display */}
       {schedule && (
-        <div className="mt-8 bg-white p-6 rounded-lg shadow-md">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-bold text-gray-900">Generated Schedule</h2>
+        <div className="mt-12 card p-8">
+          <div className="flex justify-between items-center mb-6">
+            <div className="flex items-center gap-3">
+              <Download className="text-2xl text-green-400" />
+              <h2 className="text-2xl font-bold">Generated Schedule</h2>
+            </div>
             <button
               onClick={handleDownloadPDF}
-              className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 font-semibold"
+              className="btn-success flex items-center gap-3 px-6 py-3"
             >
               <Download size={20} />
               Download PDF
@@ -350,22 +412,22 @@ export default function TrackDayForm() {
           </div>
           
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse border border-gray-300">
+            <table className="w-full border-collapse">
               <thead>
-                <tr className="bg-gray-50">
-                  <th className="border border-gray-300 px-4 py-2 text-left font-bold text-gray-900">Start Time</th>
-                  <th className="border border-gray-300 px-4 py-2 text-left font-bold text-gray-900">End Time</th>
-                  <th className="border border-gray-300 px-4 py-2 text-left font-bold text-gray-900">Group</th>
-                  <th className="border border-gray-300 px-4 py-2 text-left font-bold text-gray-900">Description</th>
+                <tr>
+                  <th className="px-6 py-4 text-left">Start Time</th>
+                  <th className="px-6 py-4 text-left">End Time</th>
+                  <th className="px-6 py-4 text-left">Group</th>
+                  <th className="px-6 py-4 text-left">Description</th>
                 </tr>
               </thead>
               <tbody>
                 {schedule.sessions.map((session) => (
                   <tr key={session.id}>
-                    <td className="border border-gray-300 px-4 py-2 font-medium text-gray-900">{session.startTime}</td>
-                    <td className="border border-gray-300 px-4 py-2 font-medium text-gray-900">{session.endTime}</td>
-                    <td className="border border-gray-300 px-4 py-2 font-medium text-gray-900">{session.group}</td>
-                    <td className="border border-gray-300 px-4 py-2 font-medium text-gray-900">{session.description}</td>
+                    <td className="px-6 py-4 font-medium text-gray-200">{session.startTime}</td>
+                    <td className="px-6 py-4 font-medium text-gray-200">{session.endTime}</td>
+                    <td className="px-6 py-4 font-medium text-gray-200">{session.group}</td>
+                    <td className="px-6 py-4 font-medium text-gray-200">{session.description}</td>
                   </tr>
                 ))}
               </tbody>
@@ -374,7 +436,6 @@ export default function TrackDayForm() {
         </div>
       )}
 
-      {/* Draggable Driver Groups Display */}
       {Object.keys(driverGroups).length > 0 && (
         <DraggableDriverGroups
           driverGroups={driverGroups}

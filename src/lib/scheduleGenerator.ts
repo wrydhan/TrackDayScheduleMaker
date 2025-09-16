@@ -14,20 +14,17 @@ export function generateSchedule(drivers: Driver[], config: TrackDayConfig): Sch
 
 function createGroups(drivers: Driver[], config: TrackDayConfig): string[] {
   if (config.groupingMethod === 'skill') {
-    // For skill-based grouping, create numbered groups but distribute by skill
-    const groupNames = [];
-    for (let i = 1; i <= config.numberOfRunGroups; i++) {
-      groupNames.push(`Group ${i}`);
-    }
-    return groupNames;
-  } else {
-    // Create numbered groups for random assignment
-    const groupNames = [];
-    for (let i = 1; i <= config.numberOfRunGroups; i++) {
-      groupNames.push(`Group ${i}`);
-    }
-    return groupNames;
+    // Stable, skill-named groups for any skills present
+    const skillsInOrder: Array<Driver['skillLevel']> = ['beginner', 'intermediate', 'advanced'];
+    const presentSkills = skillsInOrder.filter((skill) => drivers.some((d) => d.skillLevel === skill));
+    return presentSkills.map((skill) => skill.charAt(0).toUpperCase() + skill.slice(1));
   }
+  // Random/numbered groups
+  const groupNames: string[] = [];
+  for (let i = 1; i <= config.numberOfRunGroups; i++) {
+    groupNames.push(`Group ${i}`);
+  }
+  return groupNames;
 }
 
 function createSessions(config: TrackDayConfig, groups: string[]): Session[] {
@@ -167,33 +164,23 @@ function createSessions(config: TrackDayConfig, groups: string[]): Session[] {
 export function assignDriversToGroups(drivers: Driver[], config: TrackDayConfig): Record<string, Driver[]> {
   const groups: Record<string, Driver[]> = {};
   
-  // Initialize groups based on the specified number of run groups
-  for (let i = 1; i <= config.numberOfRunGroups; i++) {
-    groups[`Group ${i}`] = [];
-  }
-  
   if (config.groupingMethod === 'skill') {
-    // Group by skill level but distribute across the specified number of groups
-    const skillGroups = {
-      beginner: drivers.filter(d => d.skillLevel === 'beginner'),
-      intermediate: drivers.filter(d => d.skillLevel === 'intermediate'),
-      advanced: drivers.filter(d => d.skillLevel === 'advanced')
-    };
-    
-    const groupNames = Object.keys(groups);
-    let groupIndex = 0;
-    
-    // Distribute each skill level across groups
-    Object.values(skillGroups).forEach(skillDrivers => {
-      skillDrivers.forEach(driver => {
-        // Ensure groupIndex is within bounds
-        if (groupIndex < groupNames.length && groups[groupNames[groupIndex]]) {
-          groups[groupNames[groupIndex]].push(driver);
-          groupIndex = (groupIndex + 1) % groupNames.length;
-        }
-      });
+    // Deterministic, pure skill groups (Beginner, Intermediate, Advanced)
+    const skillsInOrder: Array<Driver['skillLevel']> = ['beginner', 'intermediate', 'advanced'];
+    skillsInOrder.forEach((skill) => {
+      const driversWithSkill = drivers
+        .filter((d) => d.skillLevel === skill)
+        .sort((a, b) => a.name.localeCompare(b.name));
+      if (driversWithSkill.length > 0) {
+        const label = skill.charAt(0).toUpperCase() + skill.slice(1);
+        groups[label] = driversWithSkill;
+      }
     });
   } else {
+    // Initialize numbered groups for random assignment
+    for (let i = 1; i <= config.numberOfRunGroups; i++) {
+      groups[`Group ${i}`] = [];
+    }
     // Random grouping
     const shuffledDrivers = [...drivers].sort(() => Math.random() - 0.5);
     const groupNames = Object.keys(groups);

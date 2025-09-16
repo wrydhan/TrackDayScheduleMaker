@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import {
   DndContext,
   closestCenter,
@@ -10,7 +10,6 @@ import {
   useSensors,
   DragEndEvent,
   DragStartEvent,
-  DragOverlay,
   useDroppable,
 } from '@dnd-kit/core';
 import {
@@ -18,31 +17,24 @@ import {
   SortableContext,
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Driver } from '@/types';
-import { GripVertical, Users, Plus } from 'lucide-react';
+import { GripVertical, Users, Plus, Star, Zap, Trophy } from 'lucide-react';
 
 interface DraggableDriverGroupsProps {
   driverGroups: Record<string, Driver[]>;
   onGroupsChange: (newGroups: Record<string, Driver[]>) => void;
 }
 
-interface DraggableDriverProps {
+interface DriverData {
+  type: 'driver';
   driver: Driver;
-  groupName: string;
+  fromGroup: string;
 }
 
-interface DraggableGroupProps {
-  groupName: string;
-  drivers: Driver[];
-  onDriversChange: (groupName: string, drivers: Driver[]) => void;
-}
-
-function DraggableDriver({ driver, groupName }: DraggableDriverProps) {
+function DraggableDriver({ driver, groupName }: { driver: Driver; groupName: string }) {
   const {
     attributes,
     listeners,
@@ -51,30 +43,25 @@ function DraggableDriver({ driver, groupName }: DraggableDriverProps) {
     transition,
     isDragging,
   } = useSortable({ 
-    id: `driver-${driver.id}`,
+    id: driver.id,
     data: {
       type: 'driver',
       driver,
-      groupName,
-    }
+      fromGroup: groupName,
+    } as DriverData
   });
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1,
   };
 
-  const getSkillLevelColor = (skillLevel: string) => {
+  const getSkillGradient = (skillLevel: string) => {
     switch (skillLevel) {
-      case 'beginner':
-        return 'bg-green-100 text-green-800 border-green-200';
-      case 'intermediate':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'advanced':
-        return 'bg-red-100 text-red-800 border-red-200';
-      default:
-        return 'bg-gray-100 text-gray-800 border-gray-200';
+      case 'beginner': return 'driver-card beginner';
+      case 'intermediate': return 'driver-card intermediate';
+      case 'advanced': return 'driver-card advanced';
+      default: return 'driver-card';
     }
   };
 
@@ -82,274 +69,255 @@ function DraggableDriver({ driver, groupName }: DraggableDriverProps) {
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center justify-between p-2 bg-gray-50 rounded-md border border-gray-200 hover:bg-gray-100 transition-colors"
+      {...attributes}
+      {...listeners}
+      className={`
+        flex items-center justify-between p-4 rounded-xl cursor-grab
+        ${getSkillGradient(driver.skillLevel)}
+        ${isDragging ? 'opacity-50 shadow-2xl z-50 scale-105' : 'shadow-lg'}
+        transition-all duration-300 hover:scale-105
+      `}
     >
-      <div className="flex items-center gap-2 min-w-0 flex-1">
-        <div
-          {...attributes}
-          {...listeners}
-          className="cursor-grab active:cursor-grabbing p-1 hover:bg-gray-200 rounded flex-shrink-0"
-        >
-          <GripVertical size={16} className="text-gray-500" />
-        </div>
-        <span className="font-medium text-gray-900 truncate">{driver.name}</span>
+      <div className="flex items-center gap-3 flex-1 min-w-0">
+        <GripVertical size={18} className="text-white/70 flex-shrink-0" />
+        <span className="font-bold text-lg truncate">{driver.name}</span>
       </div>
-      <span className={`px-2 py-1 text-xs font-semibold rounded-full border flex-shrink-0 ${getSkillLevelColor(driver.skillLevel)}`}>
+      <div className="text-sm text-white/90 capitalize flex-shrink-0 font-semibold">
         {driver.skillLevel}
-      </span>
+      </div>
     </div>
   );
 }
 
-function DroppableGroup({ groupName, drivers, onDriversChange }: DraggableGroupProps) {
-  const { setNodeRef, isOver } = useDroppable({
-    id: `group-${groupName}`,
-    data: {
-      type: 'group',
-      groupName,
-    }
+function DroppableGroup({ groupName, children, isOver }: { 
+  groupName: string; 
+  children: React.ReactNode; 
+  isOver: boolean; 
+}) {
+  const { setNodeRef } = useDroppable({
+    id: groupName,
+    data: { type: 'group', groupName }
   });
-
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-
-    if (over && active.id !== over.id) {
-      const oldIndex = drivers.findIndex(driver => `driver-${driver.id}` === active.id);
-      const newIndex = drivers.findIndex(driver => `driver-${driver.id}` === over.id);
-
-      if (oldIndex !== -1 && newIndex !== -1) {
-        const newDrivers = arrayMove(drivers, oldIndex, newIndex);
-        onDriversChange(groupName, newDrivers);
-      }
-    }
-  };
 
   return (
     <div
       ref={setNodeRef}
-      className={`border rounded-lg p-4 transition-all duration-200 w-full ${
-        isOver 
-          ? 'border-blue-400 bg-blue-50 shadow-lg scale-105' 
-          : 'border-gray-200 bg-white hover:shadow-md'
-      }`}
+      className={`
+        p-6 rounded-2xl border-2 transition-all duration-300 min-h-[250px]
+        ${isOver 
+          ? 'border-blue-400 bg-blue-50/10 card scale-105 shadow-2xl' 
+          : 'border-muted card hover:scale-102'
+        }
+        driver-group
+      `}
     >
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-bold text-gray-900 truncate">{groupName}</h3>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <span className="bg-blue-100 text-blue-800 text-sm font-semibold px-2 py-1 rounded-full">
-            {drivers.length} drivers
-          </span>
-          {isOver && (
-            <span className="bg-green-100 text-green-800 text-xs font-semibold px-2 py-1 rounded-full animate-pulse">
-              Drop here
-            </span>
-          )}
+      {isOver && (
+        <div className="mb-4 p-3 bg-blue-100/20 text-blue-300 rounded-xl text-center font-bold text-lg border-2 border-dashed border-blue-400">
+          Drop here
+        </div>
+      )}
+      <div className="flex items-center justify-between mb-6">
+        <h3 className="text-xl font-bold text-gray-100 truncate">
+          {groupName}
+        </h3>
+        <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white text-sm font-bold px-4 py-2 rounded-full shadow-lg">
+          {children && typeof children === 'object' && 'props' in children && 
+           children.props && 'children' && Array.isArray(children.props.children) ? 
+           children.props.children.filter((child: any) => child?.type?.name === 'DraggableDriver').length : 0} drivers
         </div>
       </div>
-      
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
-      >
-        <SortableContext items={drivers.map(driver => `driver-${driver.id}`)} strategy={verticalListSortingStrategy}>
-          <div className="space-y-2 min-h-[120px] max-h-[400px] overflow-y-auto overflow-x-hidden">
-            {drivers.map((driver) => (
-              <DraggableDriver
-                key={driver.id}
-                driver={driver}
-                groupName={groupName}
-              />
-            ))}
-            {drivers.length === 0 && (
-              <div className="text-center text-gray-400 py-8 border-2 border-dashed border-gray-300 rounded-md">
-                <Plus size={24} className="mx-auto mb-2 text-gray-300" />
-                <p>Drop drivers here</p>
-                <p className="text-xs mt-1">No limit on group size</p>
-              </div>
-            )}
-          </div>
-        </SortableContext>
-      </DndContext>
-      
-      {/* Group Statistics */}
-      <div className="mt-4 pt-3 border-t border-gray-200">
-        <div className="text-sm text-gray-600">
-          <div className="flex justify-between">
-            <span>Beginners:</span>
-            <span className="font-medium">{drivers.filter(d => d.skillLevel === 'beginner').length}</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Intermediate:</span>
-            <span className="font-medium">{drivers.filter(d => d.skillLevel === 'intermediate').length}</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Advanced:</span>
-            <span className="font-medium">{drivers.filter(d => d.skillLevel === 'advanced').length}</span>
-          </div>
-        </div>
-      </div>
+      {children}
     </div>
   );
 }
 
 export default function DraggableDriverGroups({ driverGroups, onGroupsChange }: DraggableDriverGroupsProps) {
-  const [localGroups, setLocalGroups] = useState(driverGroups);
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeDriver, setActiveDriver] = useState<Driver | null>(null);
+  const [overGroup, setOverGroup] = useState<string | null>(null);
 
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
 
-  const handleDragStart = (event: DragStartEvent) => {
-    setActiveId(event.active.id as string);
-  };
+  // Memoize local groups to prevent unnecessary re-renders
+  const localGroups = useMemo(() => ({ ...driverGroups }), [driverGroups]);
 
-  const handleDragEnd = (event: DragEndEvent) => {
+  // Memoize group names
+  const groupNames = useMemo(() => Object.keys(localGroups), [localGroups]);
+
+  // Memoize items per group
+  const itemsPerGroup = useMemo(() => {
+    const items: Record<string, string[]> = {};
+    groupNames.forEach(groupName => {
+      items[groupName] = localGroups[groupName]?.map(driver => driver.id) || [];
+    });
+    return items;
+  }, [localGroups, groupNames]);
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    const { active } = event;
+    const activeData = active.data.current as DriverData;
+    
+    if (activeData?.type === 'driver') {
+      setActiveDriver(activeData.driver);
+    }
+  }, []);
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
     
-    setActiveId(null);
+    setActiveDriver(null);
+    setOverGroup(null);
 
     if (!over) return;
 
-    const activeData = active.data.current;
-    const overData = over.data.current;
-
-    // Handle moving drivers between groups
-    if (activeData?.type === 'driver' && overData?.type === 'group') {
-      const driver = activeData.driver;
-      const fromGroup = activeData.groupName;
-      const toGroup = overData.groupName;
-
-      if (fromGroup !== toGroup) {
-        moveDriverBetweenGroups(driver.id, fromGroup, toGroup);
-      }
-    }
-
-    // Handle moving drivers within the same group
-    if (activeData?.type === 'driver' && overData?.type === 'driver') {
-      const fromGroup = activeData.groupName;
-      const toGroup = overData.groupName;
-
-      if (fromGroup === toGroup) {
-        const drivers = localGroups[fromGroup];
-        const oldIndex = drivers.findIndex(d => d.id === activeData.driver.id);
-        const newIndex = drivers.findIndex(d => d.id === overData.driver.id);
-
-        if (oldIndex !== -1 && newIndex !== -1) {
-          const newDrivers = arrayMove(drivers, oldIndex, newIndex);
-          const updatedGroups = {
-            ...localGroups,
-            [fromGroup]: newDrivers
-          };
-          setLocalGroups(updatedGroups);
-          onGroupsChange(updatedGroups);
-        }
-      } else {
-        // Move driver to different group
-        moveDriverBetweenGroups(activeData.driver.id, fromGroup, toGroup);
-      }
-    }
-  };
-
-  const moveDriverBetweenGroups = (driverId: string, fromGroup: string, toGroup: string) => {
-    const fromDrivers = localGroups[fromGroup];
-    const toDrivers = localGroups[toGroup];
+    const activeData = active.data.current as DriverData;
+    const overId = over.id as string;
     
-    const driver = fromDrivers.find(d => d.id === driverId);
-    if (!driver) return;
+    if (!activeData || activeData.type !== 'driver') return;
 
-    const newFromDrivers = fromDrivers.filter(d => d.id !== driverId);
-    const newToDrivers = [...toDrivers, driver];
+    const sourceGroup = activeData.fromGroup;
+    const activeDriver = activeData.driver;
 
-    const updatedGroups = {
-      ...localGroups,
-      [fromGroup]: newFromDrivers,
-      [toGroup]: newToDrivers
-    };
+    // Determine if we're dropping on a group or another driver
+    const overData = over.data.current;
+    let targetGroup: string;
 
-    setLocalGroups(updatedGroups);
-    onGroupsChange(updatedGroups);
-  };
+    if (overData?.type === 'group') {
+      targetGroup = overData.groupName;
+    } else if (overData?.type === 'driver') {
+      targetGroup = overData.fromGroup;
+    } else {
+      // Try to find the group by looking up the driver
+      targetGroup = Object.keys(localGroups).find(groupName => 
+        localGroups[groupName]?.some(driver => driver.id === overId)
+      ) || sourceGroup;
+    }
 
-  const activeDriver = activeId ? 
-    Object.values(localGroups)
-      .flat()
-      .find(driver => `driver-${driver.id}` === activeId)
-    : null;
+    const newGroups = { ...localGroups };
+
+    // Remove driver from source group
+    newGroups[sourceGroup] = localGroups[sourceGroup]?.filter(
+      driver => driver.id !== activeDriver.id
+    ) || [];
+
+    if (sourceGroup === targetGroup) {
+      // Reordering within the same group
+      const oldIndex = localGroups[sourceGroup]?.findIndex(driver => driver.id === activeDriver.id) || -1;
+      const newIndex = localGroups[targetGroup]?.findIndex(driver => driver.id === overId) || -1;
+      
+      if (oldIndex !== -1 && newIndex !== -1) {
+        newGroups[targetGroup] = arrayMove(localGroups[sourceGroup] || [], oldIndex, newIndex);
+      } else {
+        // Fallback: just add to the end
+        newGroups[targetGroup] = [...(localGroups[sourceGroup] || [])];
+      }
+    } else {
+      // Moving to a different group
+      if (overData?.type === 'driver') {
+        // Insert at specific position
+        const targetIndex = localGroups[targetGroup]?.findIndex(driver => driver.id === overId) || 0;
+        const newTargetDrivers = [...(localGroups[targetGroup] || [])];
+        newTargetDrivers.splice(targetIndex, 0, activeDriver);
+        newGroups[targetGroup] = newTargetDrivers;
+      } else {
+        // Add to end of target group
+        newGroups[targetGroup] = [...(localGroups[targetGroup] || []), activeDriver];
+      }
+    }
+
+    onGroupsChange(newGroups);
+  }, [localGroups, onGroupsChange]);
+
+  const handleDragOver = useCallback((event: any) => {
+    const { over } = event;
+    if (over) {
+      const overData = over.data.current;
+      if (overData?.type === 'group') {
+        setOverGroup(overData.groupName);
+      } else if (overData?.type === 'driver') {
+        setOverGroup(overData.fromGroup);
+      }
+    } else {
+      setOverGroup(null);
+    }
+  }, []);
+
+  const totalDrivers = Object.values(localGroups).reduce((total, group) => total + (group?.length || 0), 0);
 
   return (
-    <div className="mt-8 bg-white p-6 rounded-lg shadow-md">
-      <div className="flex items-center gap-2 mb-6">
-        <Users size={24} className="text-blue-600" />
-        <h2 className="text-xl font-bold text-gray-900">Driver Groups</h2>
-        <span className="text-sm text-gray-500 ml-2">(Unlimited drivers per group)</span>
+    <div className="mt-12 card p-8">
+      <div className="flex items-center gap-4 mb-8">
+        <div className="p-3 bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl">
+          <Users size={28} className="text-white" />
+        </div>
+        <div>
+          <h2 className="text-3xl font-bold text-gray-100">Driver Groups</h2>
+          <p className="text-gray-400 font-medium">
+            {totalDrivers} total drivers
+          </p>
+        </div>
       </div>
-      
+
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
         onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full">
-          {Object.entries(localGroups).map(([groupName, drivers]) => (
-            <DroppableGroup
-              key={groupName}
-              groupName={groupName}
-              drivers={drivers}
-              onDriversChange={(groupName, newDrivers) => {
-                const updatedGroups = {
-                  ...localGroups,
-                  [groupName]: newDrivers
-                };
-                setLocalGroups(updatedGroups);
-                onGroupsChange(updatedGroups);
-              }}
-            />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 w-full">
+          {groupNames.map((groupName) => (
+            <DroppableGroup key={groupName} groupName={groupName} isOver={overGroup === groupName}>
+              <SortableContext items={itemsPerGroup[groupName] || []} strategy={verticalListSortingStrategy}>
+                <div className="space-y-3 min-h-[150px] max-h-[400px] overflow-y-auto overflow-x-hidden">
+                  {localGroups[groupName]?.map((driver) => (
+                    <DraggableDriver key={driver.id} driver={driver} groupName={groupName} />
+                  )) || []}
+                  {(!localGroups[groupName] || localGroups[groupName].length === 0) && (
+                    <div className="text-center text-gray-400 py-12 border-2 border-dashed border-gray-400 rounded-xl">
+                      <Plus size={32} className="mx-auto mb-3 text-gray-300" />
+                      <p className="font-bold text-lg">Drop drivers here</p>
+                      <p className="text-sm mt-2">No limit on group size</p>
+                      <p className="text-xs mt-1">Drag & drop to organize</p>
+                    </div>
+                  )}
+                </div>
+              </SortableContext>
+
+              <div className="mt-6 pt-4 border-t border-gray-300/30">
+                <div className="text-sm text-gray-200 space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span>Beginners:</span>
+                    <span className="font-bold bg-green-500/20 text-green-300 px-2 py-1 rounded-full">
+                      {localGroups[groupName]?.filter((d) => d.skillLevel === 'beginner').length || 0}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span>Intermediate:</span>
+                    <span className="font-bold bg-yellow-500/20 text-yellow-300 px-2 py-1 rounded-full">
+                      {localGroups[groupName]?.filter((d) => d.skillLevel === 'intermediate').length || 0}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span>Advanced:</span>
+                    <span className="font-bold bg-red-500/20 text-red-300 px-2 py-1 rounded-full">
+                      {localGroups[groupName]?.filter((d) => d.skillLevel === 'advanced').length || 0}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </DroppableGroup>
           ))}
         </div>
-
-        <DragOverlay>
-          {activeDriver ? (
-            <div className="flex items-center justify-between p-2 bg-white rounded-md border border-gray-300 shadow-lg">
-              <div className="flex items-center gap-2">
-                <GripVertical size={16} className="text-gray-500" />
-                <span className="font-medium text-gray-900">{activeDriver.name}</span>
-              </div>
-              <span className={`px-2 py-1 text-xs font-semibold rounded-full border ${
-                activeDriver.skillLevel === 'beginner' ? 'bg-green-100 text-green-800 border-green-200' :
-                activeDriver.skillLevel === 'intermediate' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' :
-                'bg-red-100 text-red-800 border-red-200'
-              }`}>
-                {activeDriver.skillLevel}
-              </span>
-            </div>
-          ) : null}
-        </DragOverlay>
       </DndContext>
-
-      {/* Instructions */}
-      <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-        <h3 className="font-semibold text-blue-900 mb-2">How to use drag and drop:</h3>
-        <ul className="text-sm text-blue-800 space-y-1">
-          <li>• <strong>Unlimited drivers per group</strong> - no restrictions on group size</li>
-          <li>• Drag drivers between different groups to reorganize</li>
-          <li>• Drag drivers within the same group to reorder</li>
-          <li>• Groups highlight and scale up when you can drop a driver</li>
-          <li>• Changes are automatically saved and reflected in the PDF</li>
-        </ul>
-      </div>
     </div>
   );
 }
